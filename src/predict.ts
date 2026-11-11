@@ -63,6 +63,18 @@ export function predict(i: Inputs): Prediction {
   return { levels: { clasificacion, stock, rotacion, global }, probQuiebre, diasHastaAgotar, ventasSemana: weekly, ingreso30d, headline, items };
 }
 
+// Prenda guardada en el teléfono. Los campos opcionales faltan en prendas guardadas por versiones anteriores.
+export type StoredItem = { id: number; name: string; cat: Cat; img?: string; talla?: string; stock?: number; price?: number; days?: number; zona?: string; season?: Season };
+
+export function itemStatus(it: { cat: Cat; stock: number; days: number; season?: Season }): { level: Level; text: string } {
+  const p = predict({ cat: it.cat, conf: 1, stock: it.stock, price: 0, days: it.days, season: it.season ?? "todo" });
+  if (it.stock <= 0) return { level: "crit", text: "Agotado" };
+  if (p.probQuiebre > 65) return { level: "crit", text: "Quiebre próximo" };
+  if (it.days > 120) return { level: "warn", text: "Rotación lenta" };
+  if (p.probQuiebre > 30) return { level: "warn", text: "Stock bajo" };
+  return { level: "ok", text: "Stock sano" };
+}
+
 export function clp(n: number): string {
   return "$" + String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }

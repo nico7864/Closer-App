@@ -10,11 +10,12 @@ import { Inter_400Regular, Inter_500Medium } from "@expo-google-fonts/inter";
 import { PlusJakartaSans_600SemiBold, PlusJakartaSans_700Bold, PlusJakartaSans_800ExtraBold } from "@expo-google-fonts/plus-jakarta-sans";
 import ModelRunner, { ModelRunnerHandle } from "./src/ModelRunner";
 import GuideChat from "./src/GuideChat";
-import { CATS, Cat, Season, clp, formatDias, normLabel, predict } from "./src/predict";
+import Inventario from "./src/Inventario";
+import { CATS, Cat, Season, StoredItem, clp, formatDias, normLabel, predict } from "./src/predict";
 import { Btn, C, Chip, Dropdown, F, LEVEL_COLOR, Logo, SliderField, Tile } from "./src/ui";
 
 const DEFAULT_MODEL = "https://teachablemachine.withgoogle.com/models/9_hWn5f8d/";
-type Screen = "login" | "panel" | "resultado";
+type Screen = "login" | "panel" | "resultado" | "inventario";
 type Photo = { uri: string; b64: string };
 type Result = { cat: Cat; suggested: Cat; conf: number; demo: boolean; photo: Photo };
 
@@ -48,20 +49,21 @@ function Root() {
   const [note, setNote] = useState("");
   const [guide, setGuide] = useState(false);
   const [toast, setToast] = useState("");
-  const [saved, setSaved] = useState(0);
+  const [items, setItems] = useState<StoredItem[]>([]);
+  const [okMsg, setOkMsg] = useState("");
   const [modelStatus, setModelStatus] = useState<"loading" | "ready" | "error">("loading");
   const runner = useRef<ModelRunnerHandle>(null);
   const run = useRef(0);
 
   useEffect(() => {
-    AsyncStorage.getItem("closer.items").then((v) => { if (v) { try { setSaved(JSON.parse(v).length); } catch { /* lista dañada: se ignora */ } } }).catch(() => {});
+    AsyncStorage.getItem("closer.items").then((v) => { if (v) { try { setItems(JSON.parse(v)); } catch { /* lista dañada: se ignora */ } } }).catch(() => {});
   }, []);
 
   // Botón "atrás" de Android: vuelve una pantalla en lugar de cerrar la app.
   useEffect(() => {
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       if (guide) { setGuide(false); return true; }
-      if (screen === "resultado") { setScreen("panel"); return true; }
+      if (screen === "resultado" || screen === "inventario") { setOkMsg(""); setScreen("panel"); return true; }
       if (screen === "panel") { setScreen("login"); return true; }
       return false;
     });
@@ -115,13 +117,13 @@ function Root() {
   async function guardar() {
     if (!result) return;
     try {
-      const raw = await AsyncStorage.getItem("closer.items");
-      const list = raw ? JSON.parse(raw) : [];
-      const n = list.filter((i: { cat: string }) => i.cat === result.cat).length + 1;
-      list.unshift({ id: Date.now(), name: `${result.cat} ${String(n).padStart(2, "0")}`, cat: result.cat, img: result.photo.uri, ok: true, talla, stock, price, zona });
+      const n = items.filter((i) => i.cat === result.cat).length + 1;
+      const item: StoredItem = { id: Date.now(), name: `${result.cat} ${String(n).padStart(2, "0")}`, cat: result.cat, img: result.photo.uri, talla, stock, price, days, zona, season };
+      const list = [item, ...items];
       await AsyncStorage.setItem("closer.items", JSON.stringify(list));
-      setSaved(list.length);
-      say("Prenda guardada en tu catálogo");
+      setItems(list);
+      setOkMsg(`Guardaste ${item.name} en tu inventario.`);
+      setPhoto(null); setResult(null); setScreen("inventario");
     } catch { say("No se pudo guardar. Intenta de nuevo."); }
   }
   function otra() { setPhoto(null); setResult(null); setScreen("panel"); }
@@ -168,7 +170,7 @@ function Root() {
             <View style={[st.avatar, { width: 30, height: 30 }]}><Text style={[st.avatarTx, { fontSize: 12 }]}>{PROFILES[profile].av}</Text></View>
           </View>
         </View>
-        <View><Text style={st.over}>PANEL DE INGRESO</Text><Text style={[st.t2, { marginTop: 4 }]}>Registra una prenda</Text>{saved > 0 && <Text style={st.small}>{saved} prendas guardadas en este teléfono</Text>}</View>
+        <View><Text style={st.over}>PANEL DE INGRESO</Text><Text style={[st.t2, { marginTop: 4 }]}>Registra una prenda</Text>{items.length > 0 && <Text style={st.small}>{items.length} prendas guardadas en este teléfono</Text>}</View>
 
         <Text style={st.sec}>Foto de la prenda</Text>
         <View style={{ flexDirection: "row", gap: 8 }}>
@@ -194,8 +196,11 @@ function Root() {
         <SliderField label="Días en bodega" value={days} min={0} max={180} step={1} onChange={setDays} shown={String(days)} unit="días" minLabel="0" maxLabel="180" />
 
         <Btn label="Clasificar y analizar con IA" onPress={analizar} />
+        <Btn kind="t" label={`Ver inventario registrado (${items.length})`} onPress={() => { setOkMsg(""); setScreen("inventario"); }} />
       </ScrollView>
     );
+  } else if (screen === "inventario") {
+    body = <Inventario items={items} message={okMsg} onBack={() => { setOkMsg(""); setScreen("panel"); }} onNew={() => { setOkMsg(""); setScreen("panel"); }} />;
   } else {
     if (!result || !pred) {
       body = (
